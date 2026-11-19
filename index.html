@@ -29,6 +29,7 @@
       display: grid;
       grid-template-rows: auto 1fr;
       height: 100%;
+      height: 100dvh;
     }
     header {
       padding: 0.85rem 1.25rem 0.7rem;
@@ -48,11 +49,14 @@
       line-height: 1.35;
       max-width: 70rem;
     }
+    header .help-mobile { display: none; }
     #plot {
       width: 100%;
       height: 100%;
       min-height: 420px;
       background: var(--panel);
+      /* Let Plotly own pinch / drag instead of browser page-zoom */
+      touch-action: none;
     }
     .status {
       position: absolute;
@@ -65,21 +69,42 @@
       border-radius: 4px;
       border: 1px solid var(--line);
       pointer-events: none;
+      max-width: calc(100% - 2rem);
     }
     .wrap { position: relative; min-height: 0; }
+    @media (max-width: 720px) {
+      header {
+        padding: 0.65rem 0.85rem 0.55rem;
+      }
+      header h1 {
+        font-size: 0.98rem;
+      }
+      header .help-desktop { display: none; }
+      header .help-mobile { display: block; }
+      #plot { min-height: 280px; }
+      .status {
+        right: 0.5rem;
+        bottom: 0.5rem;
+        font-size: 0.7rem;
+      }
+    }
   </style>
 </head>
 <body>
   <div class="app">
     <header>
       <h1>Fig 3 — G* at best T (interactive sketch)</h1>
-      <p>
+      <p class="help-desktop">
         Zoom/pan to separate points. Hover a marker for the MXene reaction, competing
         byproduct channel, and temperature. Encoding matches v4:
         shape = M<sub>2</sub>/M<sub>3</sub>/M<sub>4</sub>,
         color = Cl/Br,
         fill = C / open = N
         (C dodged left, N right within each metal).
+      </p>
+      <p class="help-mobile">
+        Pinch to zoom, drag to pan, double-tap to reset. Tap a marker for reaction, T, and G*.
+        Shape = M<sub>2</sub>/M<sub>3</sub>/M<sub>4</sub>, color = Cl/Br, fill = C / open = N.
       </p>
     </header>
     <div class="wrap">
@@ -159,33 +184,56 @@
       return traces;
     }
 
+    function isTouchUi() {
+      return (
+        window.matchMedia("(pointer: coarse)").matches ||
+        window.matchMedia("(max-width: 720px)").matches
+      );
+    }
+
     function layout(metals) {
+      const touch = isTouchUi();
       const tickvals = metals.map((_, i) => i);
       return {
-        margin: { l: 60, r: 20, t: 18, b: 55 },
+        margin: touch
+          ? { l: 48, r: 12, t: 10, b: 48 }
+          : { l: 60, r: 20, t: 18, b: 55 },
         paper_bgcolor: "#ffffff",
         plot_bgcolor: "#ffffff",
         hovermode: "closest",
-        dragmode: "zoom",
+        // Pan + pinch works on phones; box-zoom stays the desktop default.
+        dragmode: touch ? "pan" : "zoom",
         xaxis: {
-          title: { text: "Metal core (by atomic number)", standoff: 8 },
+          title: {
+            text: touch ? "Metal core" : "Metal core (by atomic number)",
+            standoff: 8,
+          },
           tickmode: "array",
           tickvals,
           ticktext: metals,
-          tickfont: { size: 12, family: "IBM Plex Sans, sans-serif", weight: 600 },
+          tickfont: {
+            size: touch ? 10 : 12,
+            family: "IBM Plex Sans, sans-serif",
+            weight: 600,
+          },
           range: [-0.7, metals.length - 0.3],
           zeroline: false,
           gridcolor: "rgba(0,0,0,0.08)",
           showline: true,
           linecolor: "#333",
+          fixedrange: false,
         },
         yaxis: {
-          title: { text: "G* (kJ)  [negative up]", standoff: 6 },
+          title: {
+            text: touch ? "G* (kJ)" : "G* (kJ)  [negative up]",
+            standoff: 6,
+          },
           range: [G_LIM, -G_LIM], // inverted: negative at top
           zeroline: false,
           gridcolor: "rgba(0,0,0,0.08)",
           showline: true,
           linecolor: "#333",
+          fixedrange: false,
         },
         shapes: [
           {
@@ -225,8 +273,8 @@
         ],
         legend: {
           orientation: "h",
-          y: 1.08,
-          font: { size: 10 },
+          y: touch ? 1.02 : 1.08,
+          font: { size: touch ? 9 : 10 },
         },
       };
     }
@@ -234,6 +282,8 @@
     const config = {
       responsive: true,
       displaylogo: false,
+      scrollZoom: true,
+      doubleClick: "reset",
       modeBarButtonsToRemove: ["lasso2d", "select2d"],
       toImageButtonOptions: {
         format: "png",
@@ -268,11 +318,18 @@
         const data = await loadData();
         addJitter(data.points);
         const traces = buildTraces(data);
+        if (isTouchUi()) {
+          for (const tr of traces) {
+            if (tr.marker) tr.marker.size = 11;
+          }
+        }
         const lay = layout(data.metals);
         await Plotly.newPlot("plot", traces, lay, config);
+        const gestures = isTouchUi()
+          ? "pinch zoom · drag pan · double-tap reset · tap for details"
+          : "box-zoom / scroll · double-click reset · hover for reaction + T";
         status.textContent =
-          `${data.points.length.toLocaleString()} reactions · ` +
-          `box-zoom / scroll · double-click reset · hover for reaction + T`;
+          `${data.points.length.toLocaleString()} reactions · ${gestures}`;
       } catch (err) {
         status.textContent = String(err);
         console.error(err);
